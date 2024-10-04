@@ -1,14 +1,23 @@
+// src/websocket-server/socketServer.ts
 import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
+import fetch from "node-fetch"; // Use `node-fetch` to make HTTP requests
 
-// Create a basic HTTP server (Socket.IO will attach to this)
 const httpServer = createServer();
 
-// Create a new Socket.IO server instance
+// Define the expected structure of the saved message
+interface Message {
+  id: number;
+  content: string;
+  userId: number;
+  chatRoomId: number;
+  createdAt: string;
+}
+
 const io = new SocketIOServer(httpServer, {
   path: "/ws",
   cors: {
-    origin: "*", // Adjust to match your front-end domain if needed
+    origin: "*",
     methods: ["GET", "POST"],
   },
 });
@@ -24,14 +33,44 @@ io.on("connection", (socket) => {
   });
 
   // Handle sending/receiving messages
-  socket.on("message", (messageData) => {
-    const { roomId, content, user } = messageData; // Extract fields correctly
-    if (!content) {
+  socket.on("message", async (messageData) => {
+    const { roomId, content, user } = messageData;
+
+    if (!content || !user?.username) {
       console.error(`Received malformed message data: ${JSON.stringify(messageData)}`);
       return;
     }
+
     console.log(`Message received in room ${roomId}:`, content);
-    io.to(roomId).emit("message", { ...messageData, user });
+
+    // Save the message to the database using the API route
+    try {
+      const response = await fetch("http://localhost:3000/api/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          content,
+          chatRoomName: roomId, // Use the room ID as the chatRoomName
+          user: { username: user.username }, // Include the username for context
+        }),
+      });
+
+      if (!response.ok) {
+        console.error("Failed to save message:", await response.json());
+        return;
+      }
+
+      // Use type assertion to define the expected structure of the saved message
+      const savedMessage = await response.json() as Message;
+      console.log("Message saved successfully:", savedMessage);
+
+      // Emit the saved message to the room with the correct structure
+      io.to(roomId).emit("message", { ...savedMessage, user });
+    } catch (error) {
+      console.error("Error saving message to the database:", error);
+    }
   });
 
   // Handle disconnect

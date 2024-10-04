@@ -4,15 +4,15 @@
     "main": "socketServer.ts",
     "type": "module",
     "scripts": {
-      "start": "node --loader ts-node/esm socketServer.ts"
+        "start": "node --loader ts-node/esm socketServer.ts"
     },
     "dependencies": {
-      "socket.io": "^4.5.0",
-      "ts-node": "^10.9.1",
-      "node-fetch": "^3.3.0"
+        "node-fetch": "^3.3.2",
+        "socket.io": "^4.5.0",
+        "ts-node": "^10.9.1"
     },
     "devDependencies": {
-      "@types/node": "^18.11.9",
-      "typescript": "^4.8.4"
+        "@types/node": "^18.11.9",
+        "typescript": "^4.8.4"
     }
-  }
+}
