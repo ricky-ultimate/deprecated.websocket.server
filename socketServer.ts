@@ -17,7 +17,7 @@ const io = new SocketIOServer(httpServer, {
 io.on("connection", (socket) => {
   console.log("New client connected:", socket.id);
 
-  // Handle joining a room (e.g., for group/private chat rooms)
+  // Handle joining a room
   socket.on("joinRoom", (roomId) => {
     socket.join(roomId);
     console.log(`Socket ${socket.id} joined room: ${roomId}`);
@@ -25,9 +25,9 @@ io.on("connection", (socket) => {
 
   // Handle sending/receiving messages
   socket.on("message", (messageData) => {
-    const { roomId, message } = messageData;
+    const { roomId, message, user } = messageData; // Include user info in message data
     console.log(`Message received in room ${roomId}:`, message);
-    io.to(roomId).emit("message", messageData);
+    io.to(roomId).emit("message", { ...messageData, user }); // Emit message with user info
   });
 
   // Handle disconnect
