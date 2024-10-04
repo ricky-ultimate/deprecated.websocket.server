@@ -25,9 +25,13 @@ io.on("connection", (socket) => {
 
   // Handle sending/receiving messages
   socket.on("message", (messageData) => {
-    const { roomId, message, user } = messageData; // Include user info in message data
-    console.log(`Message received in room ${roomId}:`, message);
-    io.to(roomId).emit("message", { ...messageData, user }); // Emit message with user info
+    const { roomId, content, user } = messageData; // Extract fields correctly
+    if (!content) {
+      console.error(`Received malformed message data: ${JSON.stringify(messageData)}`);
+      return;
+    }
+    console.log(`Message received in room ${roomId}:`, content);
+    io.to(roomId).emit("message", { ...messageData, user });
   });
 
   // Handle disconnect
