@@ -2,6 +2,7 @@ import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import fetch from "node-fetch";
 import * as dotenv from "dotenv";
+import { prisma } from "./prisma";
 
 dotenv.config();
 
@@ -38,7 +39,20 @@ const io = new SocketIOServer(httpServer, {
 io.on("connection", (socket) => {
   console.log("New client connected:", socket.id);
 
-  socket.on("joinRoom", (roomId) => {
+  socket.on("joinRoom", async (roomId, username) => {
+    // Check if user is a member of the room
+    const membership = await prisma.chatRoomMembership.findFirst({
+      where: {
+        chatRoom: { name: roomId },
+        user: { username },
+      },
+    });
+
+    if (!membership) {
+      socket.emit("error", "Access Denied: You are not a member of this room.");
+      return;
+    }
+
     socket.join(roomId);
     console.log(`Socket ${socket.id} joined room: ${roomId}`);
   });
