@@ -10,7 +10,9 @@
         "node-fetch": "^3.3.2",
         "socket.io": "^4.5.0",
         "ts-node": "^10.9.1",
-        "dotenv": "^16.4.5"
+        "dotenv": "^16.4.5",
+        "@prisma/client": "^5.20.0",
+        "prisma": "^5.20.0"
     },
     "devDependencies": {
         "@types/node": "^18.11.9",
