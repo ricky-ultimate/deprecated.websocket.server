@@ -8,13 +8,13 @@ dotenv.config();
 
 const httpServer = createServer();
 
-// Define the expected structure of the saved message
 interface Message {
   id: number;
   content: string;
   userId: number;
   chatRoomId: number;
   createdAt: string;
+  messageType: string;
 }
 
 const API_URL: string =
@@ -36,29 +36,53 @@ const io = new SocketIOServer(httpServer, {
   },
 });
 
+// Track active rooms and users
+const activeUsers: Record<string, Set<string>> = {};
+
 io.on("connection", (socket) => {
   console.log("New client connected:", socket.id);
 
   socket.on("joinRoom", async (roomId, username) => {
-    // Check if user is a member of the room
-    const membership = await prisma.chatRoomMembership.findFirst({
-      where: {
-        chatRoom: { name: roomId },
-        user: { username },
-      },
-    });
+    try {
+      // Check if the user is a member of the room
+      const membership = await prisma.chatRoomMembership.findFirst({
+        where: {
+          chatRoom: { name: roomId },
+          user: { username },
+        },
+      });
 
-    if (!membership) {
-      socket.emit("error", "Access Denied: You are not a member of this room.");
-      return;
+      if (!membership) {
+        socket.emit(
+          "error",
+          "Access Denied: You are not a member of this room."
+        );
+        return;
+      }
+
+      socket.join(roomId);
+      console.log(`Socket ${socket.id} joined room: ${roomId}`);
+
+      // Track active users in the room
+      if (!activeUsers[roomId]) {
+        activeUsers[roomId] = new Set();
+      }
+      activeUsers[roomId].add(username);
+
+      // Notify the room about the new member
+      io.to(roomId).emit("userJoined", {
+        user: username,
+        message: `${username} has joined the room.`,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Error checking membership:", error);
+      socket.emit("error", "Failed to join room due to a server error.");
     }
-
-    socket.join(roomId);
-    console.log(`Socket ${socket.id} joined room: ${roomId}`);
   });
 
   socket.on("message", async (messageData) => {
-    const { roomId, content, user } = messageData;
+    const { roomId, content, user, messageType = "text" } = messageData;
 
     if (!content || !user?.username) {
       console.error(
@@ -90,14 +114,47 @@ io.on("connection", (socket) => {
       const savedMessage = (await response.json()) as Message;
       console.log("Message saved successfully:", savedMessage);
 
-      io.to(roomId).emit("message", { ...savedMessage, user });
+      // Include additional metadata for scalability
+      io.to(roomId).emit("message", {
+        ...savedMessage,
+        user,
+        messageType,
+        timestamp: new Date().toISOString(),
+      });
     } catch (error) {
       console.error("Error saving message to the database:", error);
     }
   });
 
+  socket.on("leaveRoom", (roomId, username) => {
+    socket.leave(roomId);
+    console.log(`Socket ${socket.id} left room: ${roomId}`);
+
+    if (activeUsers[roomId]) {
+      activeUsers[roomId].delete(username);
+      if (activeUsers[roomId].size === 0) {
+        delete activeUsers[roomId];
+      }
+
+      // Notify the room about the member leaving
+      io.to(roomId).emit("userLeft", {
+        user: username,
+        message: `${username} has left the room.`,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
   socket.on("disconnect", () => {
     console.log("Client disconnected:", socket.id);
+
+    // Clean up active user tracking for all rooms
+    for (const roomId in activeUsers) {
+      activeUsers[roomId].delete(socket.id);
+      if (activeUsers[roomId].size === 0) {
+        delete activeUsers[roomId];
+      }
+    }
   });
 });
 
