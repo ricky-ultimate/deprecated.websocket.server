@@ -4,7 +4,7 @@ import fetch from "node-fetch";
 import * as dotenv from "dotenv";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import { RateLimiterMemory } from "rate-limiter-flexible"; // Import rate limiting
-import { prisma } from "./prisma";
+import { prisma } from "./prisma.js";
 
 dotenv.config();
 
