@@ -2,6 +2,8 @@ import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import fetch from "node-fetch";
 import * as dotenv from "dotenv";
+import jwt, { JwtPayload } from "jsonwebtoken";
+import { RateLimiterMemory } from "rate-limiter-flexible"; // Import rate limiting
 import { prisma } from "./prisma";
 
 dotenv.config();
@@ -28,6 +30,16 @@ if (!API_URL) {
   );
 }
 
+// JWT Secret for verifying tokens
+const JWT_SECRET = process.env.JWT_SECRET || "defaultSecret";
+
+// Rate limiter configuration (5 messages per 10 seconds)
+const rateLimiter = new RateLimiterMemory({
+  points: 5, // 5 messages
+  duration: 10, // per 10 seconds
+});
+
+// Initialize Socket.IO server
 const io = new SocketIOServer(httpServer, {
   path: "/ws",
   cors: {
@@ -39,10 +51,28 @@ const io = new SocketIOServer(httpServer, {
 // Track active rooms and users
 const activeUsers: Record<string, Set<string>> = {};
 
-io.on("connection", (socket) => {
-  console.log("New client connected:", socket.id);
+// JWT validation middleware for WebSocket connections
+io.use((socket, next) => {
+  const token = socket.handshake.auth.token;
 
-  socket.on("joinRoom", async (roomId, username) => {
+  if (!token) {
+    return next(new Error("Authentication error: Missing token"));
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+    socket.data.username = decoded.username;
+    next();
+  } catch (err) {
+    return next(new Error("Authentication error: Invalid token"));
+  }
+});
+
+io.on("connection", (socket) => {
+  const username = socket.data.username;
+  console.log(`New client connected: ${socket.id} as ${username}`);
+
+  socket.on("joinRoom", async (roomId) => {
     try {
       // Check if the user is a member of the room
       const membership = await prisma.chatRoomMembership.findFirst({
@@ -91,7 +121,20 @@ io.on("connection", (socket) => {
       return;
     }
 
+    // Rate limit the messages to prevent spamming
+    try {
+      await rateLimiter.consume(socket.id);
+    } catch (rateLimiterRes) {
+      socket.emit("error", "Rate limit exceeded. Please slow down.");
+      return;
+    }
+
     console.log(`Message received in room ${roomId}:`, content);
+
+    // Sanitize user inputs (basic sanitization example)
+    const sanitizedContent = content
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
 
     try {
       const response = await fetch(API_URL, {
@@ -100,7 +143,7 @@ io.on("connection", (socket) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          content,
+          content: sanitizedContent,
           chatRoomName: roomId,
           user: { username: user.username },
         }),
@@ -126,7 +169,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("leaveRoom", (roomId, username) => {
+  socket.on("leaveRoom", (roomId) => {
     socket.leave(roomId);
     console.log(`Socket ${socket.id} left room: ${roomId}`);
 
@@ -150,7 +193,7 @@ io.on("connection", (socket) => {
 
     // Clean up active user tracking for all rooms
     for (const roomId in activeUsers) {
-      activeUsers[roomId].delete(socket.id);
+      activeUsers[roomId].delete(username);
       if (activeUsers[roomId].size === 0) {
         delete activeUsers[roomId];
       }

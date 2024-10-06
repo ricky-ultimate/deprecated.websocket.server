@@ -12,7 +12,10 @@
         "ts-node": "^10.9.1",
         "dotenv": "^16.4.5",
         "@prisma/client": "^5.20.0",
-        "prisma": "^5.20.0"
+        "prisma": "^5.20.0",
+        "rate-limiter-flexible": "^5.0.3",
+        "jsonwebtoken": "^9.0.2",
+        "@types/jsonwebtoken": "^9.0.7"
     },
     "devDependencies": {
         "@types/node": "^18.11.9",
