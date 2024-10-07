@@ -2,7 +2,7 @@ import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import fetch from "node-fetch";
 import * as dotenv from "dotenv";
-import { RateLimiterMemory } from "rate-limiter-flexible"; // Keep rate limiting for spam protection
+import { RateLimiterMemory } from "rate-limiter-flexible";
 
 dotenv.config();
 
@@ -22,7 +22,9 @@ const API_URL: string =
     : process.env.LOCAL_API_URL || "";
 
 if (!API_URL) {
-  throw new Error("API URL is not defined. Please check your environment variables.");
+  throw new Error(
+    "API URL is not defined. Please check your environment variables."
+  );
 }
 
 // Rate limiter configuration (5 messages per 10 seconds)
@@ -41,13 +43,31 @@ const io = new SocketIOServer(httpServer, {
 });
 
 // Track active rooms and users
+const activeUsers: Record<string, Set<string>> = {}; // Room ID -> Set of usernames
+
 io.on("connection", (socket) => {
   console.log("New client connected:", socket.id);
 
+  // Track the username of the connected user
+  let currentUsername: string | null = null;
+
   // Handle room joining
-  socket.on("joinRoom", (roomId) => {
+  socket.on("joinRoom", (roomId, username) => {
+    currentUsername = username; // Store username for this socket
     socket.join(roomId);
-    console.log(`Socket ${socket.id} joined room: ${roomId}`);
+    console.log(`Socket ${socket.id} (${username}) joined room: ${roomId}`);
+
+    // Add user to active users list for the room
+    if (!activeUsers[roomId]) {
+      activeUsers[roomId] = new Set();
+    }
+    activeUsers[roomId].add(username);
+
+    // Notify other users in the room about the new user
+    io.to(roomId).emit("userJoined", { username, roomId });
+    console.log(
+      `Active users in ${roomId}: ${Array.from(activeUsers[roomId]).join(", ")}`
+    );
   });
 
   // Handle incoming messages
@@ -55,7 +75,9 @@ io.on("connection", (socket) => {
     const { roomId, content, user } = messageData;
 
     if (!content || !user?.username) {
-      console.error(`Received malformed message data: ${JSON.stringify(messageData)}`);
+      console.error(
+        `Received malformed message data: ${JSON.stringify(messageData)}`
+      );
       return;
     }
 
@@ -67,10 +89,15 @@ io.on("connection", (socket) => {
       return;
     }
 
-    console.log(`Message received in room ${roomId}:`, content);
+    console.log(
+      `Message received in room ${roomId} from ${user.username}:`,
+      content
+    );
 
     // Sanitize user inputs (basic sanitization example)
-    const sanitizedContent = content.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const sanitizedContent = content
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
 
     try {
       // Use `fetch` to save messages via REST API instead of direct database access
@@ -104,6 +131,25 @@ io.on("connection", (socket) => {
   // Handle disconnections
   socket.on("disconnect", () => {
     console.log("Client disconnected:", socket.id);
+
+    // Remove the user from the active users list in all rooms they were part of
+    for (const roomId in activeUsers) {
+      if (activeUsers[roomId].has(currentUsername!)) {
+        activeUsers[roomId].delete(currentUsername!);
+        console.log(
+          `User ${currentUsername} removed from active users in room: ${roomId}`
+        );
+
+        // Notify remaining users in the room
+        io.to(roomId).emit("userLeft", { username: currentUsername, roomId });
+      }
+
+      // If no users are left in the room, delete the room entry
+      if (activeUsers[roomId].size === 0) {
+        delete activeUsers[roomId];
+        console.log(`No active users left in room: ${roomId}. Room deleted.`);
+      }
+    }
   });
 });
 
