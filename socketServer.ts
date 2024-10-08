@@ -101,7 +101,7 @@ io.on("connection", (socket) => {
 
     try {
       // Use `fetch` to save messages via REST API instead of direct database access
-      const response = await fetch(API_URL, {
+      const response = await fetch(`${API_URL}/api/messages`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
